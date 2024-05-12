@@ -89,6 +89,7 @@ const createResponsiveConfig = async () => {
     },
   })
 
+  // 可以配置为一个二维数组，同一个数组的配置项属于同一个 setting-list
   const configList = [
     {
       title: '黑名单关键字',
