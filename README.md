@@ -99,7 +99,7 @@ const createResponsiveConfig = async () => {
       type: 'input',
       inputType: 'text',
       value: proxyConfig.redPackTextBlacklist.join('&'),
-      // 如果你希望改变 inputValue，则可以提供一个自定义函数
+      // 如果你不希望 input 绑定值存储为字符串，则可以提供一个自定义函数
       customStoreFormat(value) {
         return value.trim().split('&')
       },
