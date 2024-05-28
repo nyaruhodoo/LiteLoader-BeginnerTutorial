@@ -262,3 +262,21 @@ bc.addEventListener('message', (e) => {
 ```
 
 因为涉及到配置文件更新，需要你自己书写插件的加载和卸载逻辑
+
+## HOOK Vue
+
+因 QQNT 是基于 Vue 写的，如果想要获取相对底层的能力则需要拿到挂在 Vue 上的各种 API 和数据  
+否则的话就只能基于 DOM 元素进行一些缝缝补补，如果只是做样式美化那到也足够了。  
+Vue 挂载后会在`mount()`的参数中挂载应用实例，也就是常见到的`<div id="app">`这个 DOM 元素  
+在控制台打印后该 DOM 则会看到关键属性
+
+```js
+// 有 id 的 DOM 元素可以直接引用
+console.dir(app)
+
+// Vue 实例
+console.log(app.__vue_app__)
+
+// 一个用于注册能够被应用内所有组件实例访问到的全局属性的对象
+console.log(app.config.globalProperties)
+```
