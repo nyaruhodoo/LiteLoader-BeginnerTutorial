@@ -1,68 +1,120 @@
 # LiteLoaderQQNT-BeginnerTutorial
 
 最近在写抢红包插件，因暂不开源所以就把一些折腾的小东西发出来。  
-但愿能帮到同为初学者的你。
+但愿能帮到同为初学者的你。  
+~~本来已经鸽了，看到一个 star，还是抽空更新下好了~~
 
-## 如何添加插件设置界面
+# 从 LiteLoaderQQNT 的原理说起
 
-看了很多项目，相当一部分是不选择添加设置界面的，希望这里的小工具能帮到大家  
-如果你对界面要求较高可能不合适，该工具只能快速创建 `input` `switch`，对于大部分插件我想是足够了  
-~~不要问为什么默认没有 `select` 因为我自己还没用到~~
+这里只针对一些关键部分进行说明，你可以去阅读源码了解更多细节(难度很低)
 
-```js
-// 一些辅助函数
-/**
- * 修改对象指定路径属性
- * @param {object} obj
- * @param {string} path
- * @param {*} value
- */
-export const setProperty = (obj, path, value) => {
-  const keys = path.split('.')
-  const lastKey = keys.pop()
-  const parent = keys.reduce((acc, key) => acc[key] || (acc[key] = {}), obj)
-  parent[lastKey] = value
-}
+## 拦截 main
 
-/**
- * 为对象创建深层Proxy
- * @param {object} obj
- * @param {object} handler
- */
-export const createDeepProxy = (obj, handler) => {
-  if (typeof obj !== 'object' || obj === null) {
-    return obj
-  }
-
-  for (let key in obj) {
-    if (typeof obj[key] === 'object' && obj[key] !== null) {
-      obj[key] = createDeepProxy(obj[key], handler)
+```ts
+require.cache['electron'] = new Proxy(require.cache['electron'], {
+  get(target, property, receiver) {
+    const electron = Reflect.get(target, property, receiver)
+    if (property == 'exports') {
+      return new Proxy(electron, {
+        get(target, property, receiver) {
+          const BrowserWindow = Reflect.get(target, property, receiver)
+          if (property == 'BrowserWindow') {
+            return new Proxy(BrowserWindow, {
+              construct: proxyBrowserWindowConstruct,
+            })
+          }
+          return BrowserWindow
+        },
+      })
     }
-  }
+    return electron
+  },
+})
+```
 
-  return new Proxy(obj, handler)
-}
+用了一种很奇妙的方式拦截了 qq 对 `electron` 依赖的访问，主要是替换了 `BrowserWindow` 函数，注入自己的 `preload` 文件，并将 `window` 传递给插件的 `onBrowserWindowCreated`
 
-/**
- * 读取指定view html模板转换为DOM结构
- * @param {String} url
- */
-export const viewText2Html = async (url) => {
-  const text = await (await fetch(url)).text()
-  const parser = new DOMParser()
-  const doc = parser.parseFromString(text, 'text/html')
-  let fragment = document.createDocumentFragment()
-  fragment.append(...doc.body.children)
-  return fragment
+```ts
+function proxyBrowserWindowConstruct(target, [config], newTarget) {
+  const qqnt_preload_path = config.webPreferences.preload
+  const window = Reflect.construct(
+    target,
+    [
+      {
+        ...config,
+        webPreferences: {
+          ...config.webPreferences,
+          webSecurity: false,
+          devTools: true,
+          preload: processPreloadPath(qqnt_preload_path),
+          additionalArguments: ['--fetch-schemes=local'],
+        },
+      },
+    ],
+    newTarget,
+  )
+
+  // 挂载窗口原preload
+  window.webContents.preload = qqnt_preload_path
+
+  //加载自定义协议
+  protocolRegister(window.webContents.session.protocol)
+
+  // 加载插件
+  loader.onBrowserWindowCreated(window)
+
+  return window
 }
 ```
 
-```js
-import { setProperty, createDeepProxy } from './utils.js'
+## 拦截 preload & renderer
+
+实际上这里的只是拦截 main 的后续操作，毕竟加载的文件已经完全被替换  
+唯一需要注意的是，preload 文件中并不支持原生的 require (polyfilled 实现)，这里采用了特殊的方式注入代码
+
+```ts
+// 通过自定义协议加载自己的 renderer，其中又加载了插件的 renderer
+document.addEventListener('readystatechange', () => {
+  if (document.readyState == 'interactive') {
+    const script = document.createElement('script')
+    script.type = 'module'
+    script.src = `local://root/src/renderer.js`
+    document.head.prepend(script)
+  }
+})
+
+// 通过读取文件的方式加载其他 preload
+const runPreloadScript = (code) =>
+  binding.createPreloadScript(`
+(async function(require, process, Buffer, global, setImmediate, clearImmediate, exports, module) {
+    ${code}
+});
+`)(...arguments)
+```
+
+看到这里我想你已经对 LiteLoaderQQNT 有一个初步了解了，它的代码十分精简，目的就是将插件的代码注入到 QQ 中
+
+# 添加设置界面
+
+我很纠结要不要把添加设置界面放在最开头，对我来说应该是先有设置界面再有核心功能，毕竟涉及到配置文件更新如果后期进行改动还是挺麻烦的  
+这里提供一个思路来快速创建具备响应式的 UI 界面，如果对 UI 要求比较高可能不合适你  
+下面用到的部分组件是 `LiteLoaderQQNT` 提供的
+
+**工具函数均可在本项目 src 目录下寻找，代码中不做过多解释**
+
+```ts
+// renderer.js
+
+import { createConfigPage } from './renderer/createConfigPage.js'
+export const onSettingWindowCreated = createConfigPage
+```
+
+```ts
+// createConfigPage.js
 
 /**
  * 用于创建插件相关的配置界面
- * @param {HTMLElement} view
+ * @param {HTMLElement} view - LiteLoader自动生成的空白DOM元素
  */
 export const createConfigPage = async (view) => {
   // CSS
@@ -77,78 +129,35 @@ export const createConfigPage = async (view) => {
 }
 
 const createResponsiveConfig = async () => {
-  const bc = new BroadcastChannel('QQRedPackGetterII')
-  const _config = await LiteLoader.api.config.get('QQRedPackGetterII')
+  // BroadcastChannel 用于通知渲染层
+  const bc = new BroadcastChannel(NAME)
+
+  // 主线程初始化已经给了默认值，这里不再给了
+  const _config = await LiteLoader.api.config.get(NAME)
+
+  // 拦截 set 操作，同步给 LiteLoader
   const proxyConfig = createDeepProxy(_config, {
-    get(...params) {
-      return Reflect.get(...params)
-    },
     set(target, prop, val) {
       target[prop] = val
-      LiteLoader.api.config.set('QQRedPackGetterII', proxyConfig)
-      bc.postMessage(proxyConfig)
+
+      const copyObj = JSON.parse(JSON.stringify(_config))
+      LiteLoader.api.config.set(NAME, copyObj)
+      // 通知渲染层
+      bc.postMessage(copyObj)
+      // 通知主线程
+      window[NAME].refresh(copyObj)
       return true
     },
   })
 
-  // 可以配置为一个二维数组，同一个数组的配置项属于同一个 setting-list
-  const configList = [
-    {
-      title: '黑名单关键字',
-      description: '会跳过包含关键字的红包，使用&进行分割',
-      type: 'input',
-      inputType: 'text',
-      value: proxyConfig.redPackTextBlacklist.join('&'),
-      // 如果你不希望 input 绑定值存储为字符串，则可以提供一个自定义函数
-      customStoreFormat(value) {
-        return value.trim().split('&')
-      },
-    },
-    [
-      {
-        title: '最小延迟',
-        type: 'input',
-        inputType: 'number',
-        value: proxyConfig.randomDelay.min,
-        keyPath: 'randomDelay.min',
-        customStoreFormat(value) {
-          return +value
-        },
-      },
-
-      {
-        title: '最大延迟',
-        type: 'input',
-        inputType: 'number',
-        value: proxyConfig.randomDelay.max,
-        keyPath: 'randomDelay.max',
-        customStoreFormat(value) {
-          return +value
-        },
-      },
-    ],
-    {
-      title: '领取口令红包',
-      description: '实验性功能，采用模拟点击实现的，不保证稳定性',
-      type: 'setting-switch',
-      value: proxyConfig.pwdRedPack,
-      keyPath: 'pwdRedPack',
-    },
-    {
-      title: '监听消息列表',
-      description: '实验性功能，采用模拟点击实现的，不保证稳定性',
-      type: 'setting-switch',
-      value: proxyConfig.isMessageListListening,
-      keyPath: 'isMessageListListening',
-    },
-  ]
+  const configList = createConfigList(proxyConfig)
 
   const configEl = configList.map((configItem) => {
     const settingEl = createSettingEl()
     const settingListEl = settingEl.querySelector('setting-list')
 
     for (const item of Array.isArray(configItem) ? configItem : [configItem]) {
-      settingListEl.append(createSettingItemEl(item, proxyConfig))
+      settingListEl.append(createConfigItem(item, proxyConfig))
     }
     return settingEl
   })
@@ -157,126 +166,122 @@ const createResponsiveConfig = async () => {
   fragment.append(...configEl)
   return fragment
 }
+```
 
-/**
- * 根据configItem创建settingItem，并添加数据关联
- * @param {object} item
- * @param {string} item.type
- * @param {string} item.inputType
- * @param {string} item.title
- * @param {string=} item.description
- * @param {string | boolean} item.value
- * @param {string} item.keyPath
- * @param {Function} item.customStoreFormat
- * @param {object} targetObject
- */
-const createSettingItemEl = (item, targetObject) => {
-  // 初始化配置项
-  const settingItemEl = document.createElement('setting-item')
-  settingItemEl.setAttribute('data-direction', 'row')
-  settingItemEl.innerHTML = '<div class="setting-item-text"></div>'
+```ts
+// config.js
 
-  // 创建标题
-  {
-    const textBoxEl = settingItemEl.querySelector('.setting-item-text')
-    const titleEl = document.createElement('setting-text')
-
-    titleEl.innerHTML = item.title
-    textBoxEl.append(titleEl)
-
-    if (item.description) {
-      const descriptionEl = document.createElement('setting-text')
-      descriptionEl.setAttribute('data-type', 'secondary')
-      descriptionEl.innerHTML = item.description
-      textBoxEl.append(descriptionEl)
-    }
-  }
-
-  // 创建控件
-  {
-    const settingItemControlEl = document.createElement(item.type)
-    settingItemEl.append(settingItemControlEl)
-
-    if (item.type === 'setting-switch') {
-      if (item.value) {
-        settingItemControlEl.setAttribute('is-active', true)
-      }
-      settingItemControlEl.addEventListener('click', function (e) {
-        const isActive = settingItemControlEl.hasAttribute('is-active')
-        settingItemControlEl.toggleAttribute('is-active')
-        setProperty(targetObject, item.keyPath, !isActive)
-      })
-    }
-
-    if (item.type === 'input') {
-      settingItemControlEl.type = item.inputType
-      settingItemControlEl.value = item.value
-
-      settingItemControlEl.addEventListener('change', (e) => {
-        const value = item.customStoreFormat
-          ? item.customStoreFormat(e.target.value)
-          : e.target.value
-
-        setProperty(targetObject, item.keyPath, value)
-      })
-    }
-  }
-
-  return settingItemEl
-}
-
-const createSettingEl = () => {
-  const settingSectionEl = document.createElement('setting-section')
-  settingSectionEl.innerHTML = `
-    <setting-panel>
-      <setting-list data-direction="column"></setting-list>
-    </setting-panel>
-  `
-  return settingSectionEl
+export const createConfigList = (proxyConfig) => {
+  return [
+    [
+      {
+        title: '不领取低于指定金额的红包',
+        description: '金额是根据平均值计算(单位是分)',
+        type: 'input',
+        inputType: 'text',
+        keyPath: 'minimumAmount',
+        value: proxyConfig.minimumAmount,
+        customStoreFormat(value) {
+          return +value
+        },
+      },
+    ],
+  ]
 }
 ```
 
-目前支持的控件比较有限，可以自行进行扩展  
-主要就是用了一个 `proxy` 对象来同步配置文件，使用 `BroadcastChannel` 在两个窗口之间通信
+## 初始化与卸载逻辑
 
-```js
-// renderer.js
+```ts
+// main.js
+
+const { initGrabRedBag } = require('./main/grabRedBag')
+initGrabRedBag()
+```
+
+```ts
+// grabRedBag.js
+
+/**
+ * 初始化抢红包插件
+ * @param {defaultConfig} config - 抢红包配置
+ */
 const init = async (config) => {
-  config ||= await LiteLoader.api.config.get(manifest.slug, default_config)
-  // 随便做点什么？
-}
-const refresh = (config) => {
-  // 执行卸载逻辑，再init一次
+  config ||= await LiteLoader.api.config.get(NAME, defaultConfig)
 
+  /**
+   * 注册用户信息事件
+   * @param {userDataType} payload - 用户数据
+   */
+  const onProfileDetailInfoChanged = (payload) => {
+    _USER_DATA = payload.info
+  }
+  eventEmitter.on(
+    'nodeIKernelProfileListener/onProfileDetailInfoChanged',
+    onProfileDetailInfoChanged,
+  )
+
+  /**
+   * 注册新消息事件
+   * @param {object} payload - 新消息
+   * @param {Array<msgItemType>} payload.msgList - 消息列表
+   */
+  const onRecvActiveMsg = async (payload) => {
+    const { msgList } = payload
+
+    for (const msg of msgList) {
+      const { msgType } = msg
+
+      try {
+        if (msgType === 10) await onRecvActiveLuckyMoneyMsg(msg, config)
+      } catch (error) {
+        log(error)
+      }
+    }
+  }
+  eventEmitter.on('nodeIKernelMsgListener/onRecvActiveMsg', onRecvActiveMsg)
+
+  log('初始化成功')
+}
+
+/**
+ * 重新初始化抢红包插件
+ * @param {defaultConfig} config - 抢红包配置
+ */
+const refresh = (config) => {
+  log('配置文件已更新')
+  log(JSON.stringify(config))
+  eventEmitter.removeAllListeners(
+    'nodeIKernelProfileListener/onProfileDetailInfoChanged',
+  )
+  eventEmitter.removeAllListeners('nodeIKernelMsgListener/onRecvActiveMsg')
   init(config)
 }
 
-// 初始化
-init()
-// 监听更新
-const bc = new BroadcastChannel('QQRedPackGetterII')
-bc.addEventListener('message', (e) => {
-  const config = e.data
-  refresh(config)
+module.exports = {
+  initGrabRedBag() {
+    init()
+    ipcMain.on(NAME, (event, config) => {
+      refresh(config)
+    })
+  },
+}
+```
+
+```ts
+// preload.js
+
+const { contextBridge, ipcRenderer } = require('electron')
+
+const NAME = 'GrabRedBag'
+
+// 暴露给渲染层去触发 refresh
+contextBridge.exposeInMainWorld(NAME, {
+  refresh(config) {
+    ipcRenderer.send(NAME, config)
+  },
 })
 ```
 
-因为涉及到配置文件更新，需要你自己书写插件的加载和卸载逻辑
-
-## HOOK Vue
-
-因 QQNT 是基于 Vue 写的，如果想要获取相对底层的能力则需要拿到挂在 Vue 上的各种 API 和数据  
-否则的话就只能基于 DOM 元素进行一些缝缝补补，如果只是做样式美化那到也足够了。  
-Vue 挂载后会在`mount()`的参数中挂载应用实例，也就是常见到的`<div id="app">`这个 DOM 元素  
-在控制台打印后该 DOM 则会看到关键属性
-
-```js
-// 有 id 的 DOM 元素可以直接引用
-console.dir(app)
-
-// Vue 实例
-console.log(app.__vue_app__)
-
-// 一个用于注册能够被应用内所有组件实例访问到的全局属性的对象
-console.log(app.config.globalProperties)
-```
+在插件被挂载的时候调用 `init` 方法，并且通过 `IPC` 监听更新事件触发 `refresh`  
+具体的挂载卸载逻辑由你自己决定，这里只是展示部分代码可供参考，实际上你的初始化不一定在主线程，也可能在渲染层

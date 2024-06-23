@@ -1,0 +1,14 @@
+.GrabRedBag input {
+  min-width: 5em;
+  height: 24px;
+  border-radius: 4px;
+  background-color: var(--overlay_active);
+  text-align: center;
+  padding: 0 4px;
+}
+
+.GrabRedBag input::-webkit-inner-spin-button,
+.GrabRedBag input::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
