@@ -1,3 +1,5 @@
+import { setProperty } from './utils.js'
+
 /**
  * 根据 ConfigItem 创建 DOM
  * @param {object} item
