@@ -1,9 +1,0 @@
-{
-  "randomDelay": {
-    "min": 0,
-    "max": 200
-  },
-  "redPackTextBlacklist": ["挂", "死", "狗", "测试"],
-  "pwdRedPack": true,
-  "isMessageListListening": true
-}
