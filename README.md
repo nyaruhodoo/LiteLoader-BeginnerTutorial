@@ -367,7 +367,7 @@ module.exports = {
 
 其实说 hook ipc 也不是一个非常复杂的事情，我们只需要监听它的收发操作即可  
 原理就是覆盖 `send` 方法和 `-ipc-message` 内部事件  
-需要注意的是，hook ipc 只是过程，而不是结果，我们的最终目的是了解 QQ 自己通过 IPC 做了哪些事，使用了什么数据结构，在这个过程中再去进行模拟
+需要注意的是，hook ipc 只是过程，而不是结果，我们的最终目的是了解 QQ 自己通过 IPC 做了哪些事，使用了什么数据结构，最终来模拟它的内部操作
 
 ```ts
 /**
@@ -445,9 +445,9 @@ const sendMsgInvokeNative = (data) => {
 }
 ```
 
-这里列举了一个很简单的例子，便于你了解通过 ipc 可以做到什么事，比如想抢红包那么就要监听红包消息，然后通过手动抢红包查看相关参数进行模拟  
-列入你想做防撤回，是不是可以考虑直接把相关事件给拦截不让它到渲染层呢？  
-需要注意的是 `IPC_UP_2` 和 `ns-ntApi-2` 这里有一个奇怪的数字 2 ，代表的是 QQ 的主窗口，绝大多数逻辑其实都与 2 有关，其实等你 hook 了 ipc 多 log 一下就知道是什么了
+这里列举了一个很简单的例子，便于你了解如何通过 ipc 调用底层函数  
+假如你想做防撤回，是不是可以考虑直接把相关事件给拦截不让它到渲染层呢？  
+需要注意的是 `IPC_UP_2` 和 `ns-ntApi-2` 这里有一个奇怪的数字 2 ，代表的是 QQ 的主窗口，绝大多数逻辑其实都与 2 有关
 
 上面的代码我有意的省略了魔改参数的部分，如果你需要可以参考 `hookData.js`  
 你只需要以同步的方式 return 魔改后的参数即可
@@ -455,16 +455,6 @@ const sendMsgInvokeNative = (data) => {
 ```ts
 const hookIpcSend = (sendData) => {
   const [ipcName, event, data] = sendData
-
-  // 额外派发cmd事件，方便自己处理
-  if (Array.isArray(data)) {
-    eventEmitter.emit(data[0].cmdName, data[0].payload)
-  }
-
-  // 额外派发 response 事件，方便主线程模拟cmd事件时拿到返回值
-  if (event.callbackId) {
-    eventEmitter.emit(event.callbackId, data)
-  }
 
   if (Array.isArray(data) && hookSendData[data[0].cmdName]) {
     return hookSendData[data[0].cmdName](sendData)
