@@ -288,9 +288,192 @@ contextBridge.exposeInMainWorld(NAME, {
 
 # 在 IPC 做点什么
 
-有空再写，我要开始摸鱼了  
-~~什么时候我发现有第二个 star 再说~~
+如果你对于 IPC 不太了解，可以先阅读 electron 官方文档  
+在这里我们简单的把 NTQQ 的 Vue 部分理解为前端，IPC 部分理解为后端  
+只要 hook 了 IPC 部分，那么大部分功能其实也都可以实现了
+
+```ts
+// main.js
+
+const { hookIpc } = require('./main/hookIpc')
+
+exports.onBrowserWindowCreated = (window) => {
+  hookIpc(window)
+}
+```
+
+```ts
+// hookIpc.js
+
+const { eventDataType } = require('./type.js')
+const { eventEmitter } = require('./events.js')
+
+/**
+ * 拦截主线程收到的消息(支持魔改参数)
+ * @param {[{frameId:number,processId:number},boolean,string,[eventDataType,any]]} messageData 消息内容
+ * @return {false|[{frameId:number,processId:number},boolean,string,[eventDataType,any]]} return false 可以中断函数
+ */
+const hookIpcMessage = (messageData) => {
+  const [, , ipcName, [event, payload]] = messageData
+
+  return messageData
+}
+
+/**
+ * 拦截主线程发送的消息(支持魔改参数)
+ * @param {[string,eventDataType|boolean,any]} sendData 消息内容
+ * @return {false|[string,eventDataType|boolean,any]} return false 可以中断函数
+ *
+ */
+const hookIpcSend = (sendData) => {
+  const [ipcName, event, data] = sendData
+
+  // 额外派发cmd事件，方便自己处理
+  if (Array.isArray(data)) {
+    eventEmitter.emit(data[0].cmdName, data[0].payload)
+  }
+
+  // 额外派发 response 事件，方便主线程模拟cmd事件时拿到返回值
+  if (event.callbackId) {
+    eventEmitter.emit(event.callbackId, data)
+  }
+
+  return sendData
+}
+
+module.exports = {
+  hookIpc(window) {
+    window.webContents.send = new Proxy(window.webContents.send, {
+      apply(target, thisArg, args) {
+        const ret = hookIpcSend(args)
+        if (!ret) return
+        return Reflect.apply(target, thisArg, ret)
+      },
+    })
+
+    window.webContents._events['-ipc-message'] = new Proxy(
+      window.webContents._events['-ipc-message'],
+      {
+        apply(target, thisArg, args) {
+          const ret = hookIpcMessage(args)
+          if (!ret) return
+          return Reflect.apply(target, thisArg, ret)
+        },
+      },
+    )
+  },
+}
+```
+
+其实说 hook ipc 也不是一个非常复杂的事情，我们只需要监听它的收发操作即可  
+原理就是覆盖 `send` 方法和 `-ipc-message` 内部事件  
+需要注意的是，hook ipc 只是过程，而不是结果，我们的最终目的是了解 QQ 自己通过 IPC 做了哪些事，使用了什么数据结构，在这个过程中再去进行模拟
+
+```ts
+/**
+ * 调用 QQ 底层函数 (在主线程模拟渲染层调用)
+ * @param { string } eventName 函数事件类型。
+ * @param { string } cmdName 函数名。
+ * @param  { ...any } args 函数参数。
+ * @return {Promise<any>}
+ */
+const invokeNative = (eventName, cmdName, ...args) => {
+  const callbackId = randomUUID()
+
+  return new Promise((resolve) => {
+    ipcMain.emit(
+      'IPC_UP_2',
+      // 实际上这个event对象的模拟完全没作用，qq 的底层逻辑不会用到它
+      {
+        sender: {
+          send(...args) {
+            log('拦截了send', ...args)
+          },
+        },
+        reply(...args) {
+          log('拦截了reply', ...args)
+        },
+      },
+      { type: 'request', callbackId, eventName },
+      [cmdName, ...args],
+    )
+
+    eventEmitter.once(callbackId, resolve)
+  })
+}
+
+/**
+ * 精简版发送消息，只支持纯文本
+ * @param {object} data - 参数
+ * @param {string} data.content - 发送内容
+ * @param {number} data.chatType - 消息类型(1私人，2群组)
+ * @param {string} data.peerUid - 接收人Uid / 群号
+ * @return {resType}
+ */
+const sendMsgInvokeNative = (data) => {
+  // 确保所有值都是存在的，防止后期有改动导致封号
+  if (!Object.values(data).every(Boolean))
+    throw new Error('参数有错，请检查QQ是否有更新')
+
+  return invokeNative(
+    'ns-ntApi-2',
+    'nodeIKernelMsgService/sendMsg',
+    {
+      msgId: '0',
+      msgAttributeInfos: new Map(),
+      peer: {
+        chatType: data.chatType,
+        guildId: '',
+        peerUid: data.peerUid,
+      },
+      msgElements: [
+        {
+          elementType: 1,
+          elementId: '',
+          textElement: {
+            content: data.content,
+            atType: 0,
+            atUid: '',
+            atTinyId: '',
+            atNtUid: '',
+          },
+        },
+      ],
+    },
+    undefined,
+  )
+}
+```
+
+这里列举了一个很简单的例子，便于你了解通过 ipc 可以做到什么事，列入我想抢红包那么就要监听红包消息，然后通过手动抢红包查看相关参数进行模拟  
+列入你想做防撤回，是不是可以考虑直接把相关事件给拦截不让它到渲染层呢？  
+需要注意的是 `IPC_UP_2` 和 `ns-ntApi-2` 这里有一个奇怪的数字 2 ，代表的是 QQ 的主窗口，绝大多数逻辑其实都与 2 有关，其实等你 hook 了 ipc 多 log 一下就知道是什么了
+
+上面的代码我有意的省略了魔改参数的部分，如果你需要可以参考 `hookData.js`  
+你只需要以同步的方式 return 魔改后的参数即可
+
+```ts
+const hookIpcSend = (sendData) => {
+  const [ipcName, event, data] = sendData
+
+  // 额外派发cmd事件，方便自己处理
+  if (Array.isArray(data)) {
+    eventEmitter.emit(data[0].cmdName, data[0].payload)
+  }
+
+  // 额外派发 response 事件，方便主线程模拟cmd事件时拿到返回值
+  if (event.callbackId) {
+    eventEmitter.emit(event.callbackId, data)
+  }
+
+  if (Array.isArray(data) && hookSendData[data[0].cmdName]) {
+    return hookSendData[data[0].cmdName](sendData)
+  }
+
+  return sendData
+}
+```
 
 # 在 Vue 做点什么
 
-~~
+有空再写吧，因为我目前开发的插件完全不需要在渲染层做什么事情
