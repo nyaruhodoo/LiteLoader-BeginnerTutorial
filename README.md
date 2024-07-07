@@ -2,7 +2,9 @@
 
 最近在写抢红包插件，因暂不开源所以就把一些折腾的小东西发出来。  
 但愿能帮到同为初学者的你。  
-~~本来已经鸽了，看到一个 star，还是抽空更新下好了~~
+~~其实也不是面向纯小白，我是假设你已经有一些 JS 基础的~~
+~~本来已经鸽了，看到一个 star，还是抽空更新下好了~~  
+~~可以让我摆烂了吗，怎么越来越多~~
 
 # 从 LiteLoaderQQNT 的原理说起
 
@@ -32,7 +34,8 @@ require.cache['electron'] = new Proxy(require.cache['electron'], {
 })
 ```
 
-用了一种很奇妙的方式拦截了 qq 对 `electron` 依赖的访问，主要是替换了 `BrowserWindow` 函数，注入自己的 `preload` 文件，并将 `window` 传递给插件的 `onBrowserWindowCreated`
+用了一种很奇妙的方式拦截了 qq 对 `electron` 依赖的访问，主要是替换了 `BrowserWindow` 函数，注入自己的 `preload` 文件，并将 `window` 传递给插件的 `onBrowserWindowCreated`  
+因为插件的执行时机足够早，所以我们可以在 QQ 访问某些依赖之前就进行 hook
 
 ```ts
 function proxyBrowserWindowConstruct(target, [config], newTarget) {
@@ -94,11 +97,30 @@ const runPreloadScript = (code) =>
 
 看到这里我想你已经对 LiteLoaderQQNT 有一个初步了解了，它的代码十分精简，目的就是将插件的代码注入到 QQ 中
 
+# 目录结构
+
+我使用的是[官方模板](https://github.com/LiteLoaderQQNT/Plugin-Template)，唯一不同的是我多建立了`main` `renderer`文件夹用来存放相关代码  
+主要原因是主线程和渲染层使用的是完全不同的模块化方案，所以你会看到 2 个`utils`文件，其中会包含一些相同的代码  
+~~我懒得上构建工具，你还会看到很多奇妙的方式去写类型，多少有点瞎眼~~
+
+# 调试
+
+~~[官方文档](https://liteloaderqqnt.github.io/docs/introduction.html#%E8%B0%83%E8%AF%95%E4%BB%A3%E7%A0%81) 我知道你们也懒得看~~
+
+在 qq 安装文件夹下执行 `./qq.exe --enable-logging` 即可打开调试终端
+
+![](https://files.catbox.moe/qygfyd.png)
+
+调试渲染层可以安装这个插件[chii-devtools](https://github.com/mo-jinran/chii-devtools/tree/v4)，可以在 QQ 中使用 F12 打开开发者工具  
+需要注意的是这是一个远程调试手段，他并不是真的 devTools，对于某些数据结构它无法很好的渲染
+而且它无法对预渲染层进行调试，`preload.js` 和 chrome 扩展一样是在 `Isolated World` 里跑的，但 chii 没 hook `Isolated World` 里的 `console.log`  
+~~也有其他魔法可以进行调试，但我觉得终端已经足够了~~
+
 # 添加设置界面
 
 我很纠结要不要把添加设置界面放在最开头，对我来说应该是先有设置界面再有核心功能，毕竟涉及到配置文件更新如果后期进行改动还是挺麻烦的  
 这里提供一个思路来快速创建具备响应式的 UI 界面，如果对 UI 要求比较高可能不合适你  
-下面用到的部分组件是 `LiteLoaderQQNT` 提供的
+下面用到的部分组件是 [LiteLoaderQQNT](https://liteloaderqqnt.github.io/docs/web-components.html) 提供的
 
 **工具函数均可在本项目 src 目录下寻找，代码中不做过多解释**
 
@@ -120,7 +142,7 @@ export const createConfigPage = async (view) => {
   // CSS
   const linkEl = document.createElement('link')
   linkEl.rel = 'stylesheet'
-  linkEl.href = `local:///${LiteLoader.plugins.QQRedPackGetterII.path.plugin}/src/css/index.css`
+  linkEl.href = `local:///${LiteLoader.plugins[NAME].path.plugin}/src/css/index.css`
   document.head.appendChild(linkEl)
 
   // DOM
@@ -168,10 +190,29 @@ const createResponsiveConfig = async () => {
 }
 ```
 
+也没什么复杂的，就是将配置对象包装成 Proxy 对象并且拦截赋值操作然后同步给 LiteLoader
+
 ```ts
 // config.js
 
-export const createConfigList = (proxyConfig) => {
+type Config = {
+  // 标题
+  title: string
+  // 描述文本
+  description?: string
+  // 组件类型
+  type: string
+  // input 类型
+  inputType?: string
+  // 读取该值的路径
+  keyPath: string
+  // 绑定值
+  value: any
+  // 为了实现简单所有用户输入的内容均为原生input的value属性，你可以根据需要自行进行处理
+  customStoreFormat?: (value: any) => any
+}
+
+export const createConfigList = (proxyConfig: (Config | Config[])[]) => {
   return [
     [
       {
@@ -186,9 +227,23 @@ export const createConfigList = (proxyConfig) => {
         },
       },
     ],
+    {
+      title: '跳过发言领取口令红包',
+      description: '怕别用！用别怕！',
+      type: 'setting-switch',
+      value: proxyConfig.skipPwd,
+      keyPath: 'skipPwd',
+    },
   ]
 }
 ```
+
+返回值应该很好理解，如果是同一个数组则会使用同一个`setting-list`组件  
+~~其实应该加一个分类标题的，但是懒得再改~~  
+![](https://files.catbox.moe/rjzzo5.png)
+
+目前支持的 type 类型有限，就连内置组件我也只写了`setting-switch`，不过对于大部分组件来说我想应该是够用了  
+~~等 star 再多一些我考虑再补全？~~
 
 ## 初始化与卸载逻辑
 
@@ -288,7 +343,7 @@ contextBridge.exposeInMainWorld(NAME, {
 
 # 在 IPC 做点什么
 
-如果你对于 IPC 不太了解，可以先阅读 electron 官方文档  
+如果你对于 IPC 不太了解，可以先阅读 [electron 官方文档](https://www.electronjs.org/zh/docs/latest/tutorial/ipc)  
 在这里我们简单的把 NTQQ 的 Vue 部分理解为前端，IPC 部分理解为后端  
 只要 hook 了 IPC 部分，那么大部分功能其实也都可以实现了
 
@@ -365,13 +420,17 @@ module.exports = {
 }
 ```
 
-其实说 hook ipc 也不是一个非常复杂的事情，我们只需要监听它的收发操作即可  
+其实说 hook ipc 也不是一个非常复杂的事情，我们只是监听它的收发操作(它是一个 EventEmitter)  
 原理就是覆盖 `send` 方法和 `-ipc-message` 内部事件  
-需要注意的是，hook ipc 只是过程，而不是结果，我们的最终目的是了解 QQ 自己通过 IPC 做了哪些事，使用了什么数据结构，最终来模拟它的内部操作
+需要注意的是 hook ipc 只是过程而不是结果，我们的最终目的是了解 QQ 自己通过 IPC 做了哪些事，使用了什么数据结构，发生了什么事件  
+当你摸清楚这一切后，你就可以使用 IPC 来手动触发这些事件
+
+- 比如你想做防撤回，可以直接把撤回事件给中断，禁止它到渲染层
+- 又或者抢红包，只需要拿到红包消息然后再触发抢红包事件即可
 
 ```ts
 /**
- * 调用 QQ 底层函数 (在主线程模拟渲染层调用)
+ * 调用 QQ 底层函数
  * @param { string } eventName 函数事件类型。
  * @param { string } cmdName 函数名。
  * @param  { ...any } args 函数参数。
@@ -446,8 +505,8 @@ const sendMsgInvokeNative = (data) => {
 ```
 
 这里列举了一个很简单的例子，便于你了解如何通过 ipc 调用底层函数  
-假如你想做防撤回，是不是可以考虑直接把相关事件给拦截不让它到渲染层呢？  
-需要注意的是 `IPC_UP_2` 和 `ns-ntApi-2` 这里有一个奇怪的数字 2 ，代表的是 QQ 的主窗口，绝大多数逻辑其实都与 2 有关
+需要注意的是 `IPC_UP_2` 和 `ns-ntApi-2` 这里有一个奇怪的数字 2 ，代表的是 QQ 的主窗口  
+~~绝大多数逻辑其实都与 2 有关，所以我压根懒得传递这个参数~~
 
 上面的代码我有意的省略了魔改参数的部分，如果你需要可以参考 `hookData.js`  
 你只需要以同步的方式 return 魔改后的参数即可
@@ -464,6 +523,7 @@ const hookIpcSend = (sendData) => {
 }
 ```
 
-# 在 Vue 做点什么
+# 在渲染层做点什么
 
-有空再写吧，因为我目前开发的插件完全不需要在渲染层做什么事情
+有空再写吧，因为我目前开发的插件完全不需要在渲染层做什么事情  
+实际上到了这个步骤你直接拿到 window 对象，就把他当作一个浏览器去处理各种 DOM 即可
