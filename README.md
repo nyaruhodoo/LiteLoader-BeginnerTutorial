@@ -8,7 +8,7 @@
 
 # 从 LiteLoaderQQNT 的原理说起
 
-这里只针对一些关键部分进行说明，你可以去阅读源码了解更多细节(难度很低)
+这里只针对一些关键部分进行说明，你可以去[阅读源码](https://github.com/LiteLoaderQQNT/LiteLoaderQQNT/tree/main/src)了解更多细节(难度很低)
 
 ## 拦截 main
 
@@ -242,7 +242,41 @@ export const createConfigList = (proxyConfig: (Config | Config[])[]) => {
 ~~其实应该加一个分类标题的，但是懒得再改~~  
 ![](https://files.catbox.moe/rjzzo5.png)
 
+```ts
+// createConfigItem.js
+
+{
+  const settingItemControlEl = document.createElement(item.type)
+  configItemEl.append(settingItemControlEl)
+
+  if (item.type === 'setting-switch') {
+    if (item.value) {
+      settingItemControlEl.setAttribute('is-active', true)
+    }
+    settingItemControlEl.addEventListener('click', function (e) {
+      const isActive = settingItemControlEl.hasAttribute('is-active')
+      settingItemControlEl.toggleAttribute('is-active')
+      setProperty(proxyConfig, item.keyPath, !isActive)
+    })
+  }
+
+  if (item.type === 'input') {
+    settingItemControlEl.type = item.inputType
+    settingItemControlEl.value = item.value
+
+    settingItemControlEl.addEventListener('change', (e) => {
+      const value = item.customStoreFormat
+        ? item.customStoreFormat(e.target.value)
+        : e.target.value
+
+      setProperty(proxyConfig, item.keyPath, value)
+    })
+  }
+}
+```
+
 目前支持的 type 类型有限，就连内置组件我也只写了`setting-switch`，不过对于大部分组件来说我想应该是够用了  
+如果你想扩展也是很容易的，只需要在改动后调用`setProperty(proxyConfig, item.keyPath, value)`即可  
 ~~等 star 再多一些我考虑再补全？~~
 
 ## 初始化与卸载逻辑
