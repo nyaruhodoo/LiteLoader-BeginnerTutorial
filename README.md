@@ -99,7 +99,7 @@ const runPreloadScript = (code) =>
 
 # 目录结构
 
-我使用的是[官方模板](https://github.com/LiteLoaderQQNT/Plugin-Template)，唯一不同的是我多建立了`main` `renderer`文件夹用来存放相关代码  
+我使用的是[官方模板](https://github.com/LiteLoaderQQNT/Plugin-Template)，唯一不同的是我多创建了`main` `renderer`文件夹用来存放相关代码  
 主要原因是主线程和渲染层使用的是完全不同的模块化方案，所以你会看到 2 个`utils`文件，其中会包含一些相同的代码  
 ~~我懒得上构建工具，你还会看到很多奇妙的方式去写类型，多少有点瞎眼~~
 
@@ -556,6 +556,53 @@ const hookIpcSend = (sendData) => {
   return sendData
 }
 ```
+
+# 在 Wrapper 做点什么
+
+这里的 Wrapper 指的是 QQ 中的 `wrapper.node`，你可以将它理解为 QQ 的底层依赖，其中提供了一套 API  
+使用 IPC 间接实现的功能其实都是基于 wrapper 的一层封装
+
+```ts
+// hookWrapper.js
+
+Process.dlopen = new Proxy(Process.dlopen, {
+  /**
+   * @param {()=>void} target
+   * @param {*} thisArg
+   * @param {[{id:number,loaded:boolean,exports:{},paths:[],children:[]},string]} argArray - [module,filename]
+   */
+  apply(target, thisArg, argArray) {
+    const ret = Reflect.apply(target, thisArg, argArray)
+    const [{ exports }, fileName] = argArray
+
+    if (fileName.includes('wrapper.node')) {
+      argArray[0].exports = new Proxy(exports, {
+        get(target, p, receiver) {
+          if (typeof target[p] === 'function') {
+            return new Proxy(target[p], {
+              construct(target, argArray) {
+                const ret = Reflect.construct(target, argArray)
+
+                return ret
+              },
+            })
+          }
+          return Reflect.get(target, p, receiver)
+        },
+      })
+    }
+
+    return ret
+  },
+})
+```
+
+这也是我偷学的，之前我一直不知道怎么才能 hook 到 `.node` 这种二进制文件，没想到还有一个神奇的函数 `Process.dlopen`  
+如果你对这部分比较感兴趣可以去了解另一个项目 [NapCatCore](https://github.com/NapNeko/LiteLoader-NapCatCore) ~~没想到吧，我也是 Contributor~~ ，又或者是 [NapCatQQ](https://github.com/NapNeko/NapCatQQ)  
+这里只提供一个爬梯让你知道怎么去触碰它  
+不过需要提前给你打个预防针，Wrapper 中拿到的数据和从 IPC 拿到的数据并没有什么不同，所以不要有太大期待  
+~~(比如我就想尝试用它抢手机端的红包，结果嘛...)~~  
+~~(如果你有本事去逆向它，那我只能说 xmsl，tql)~~
 
 # 在渲染层做点什么
 
