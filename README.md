@@ -6,6 +6,11 @@
 ~~本来已经鸽了，看到一个 star，还是抽空更新下好了~~  
 ~~可以让我摆烂了吗，怎么越来越多~~
 
+# 写在最前
+
+[自用插件开发模板](https://github.com/nyaruhodoo/LiteLoader-NapCatCore-Template)  
+本文章不出意外将来不会再更新了，如果你想了解如何更好的开发插件，可以来看这个模板
+
 # 从 LiteLoaderQQNT 的原理说起
 
 这里只针对一些关键部分进行说明，你可以去[阅读源码](https://github.com/LiteLoaderQQNT/LiteLoaderQQNT/tree/main/src)了解更多细节(难度很低)
