@@ -8,8 +8,10 @@
 
 # 写在最前
 
-[自用插件开发模板](https://github.com/nyaruhodoo/LiteLoader-NapCatCore-Template)  
-本文章不出意外将来不会再更新了，如果你想了解如何更好的开发插件，可以来看这个模板
+~~[自用插件开发模板](https://github.com/nyaruhodoo/LiteLoader-NapCatCore-Template)~~  
+重构中...
+
+本文章不出意外的话应该是不会再进行什么更新了，想要实现的功能都会集成在模板里
 
 # 从 LiteLoaderQQNT 的原理说起
 
