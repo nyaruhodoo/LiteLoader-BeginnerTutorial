@@ -8,8 +8,7 @@
 
 # 写在最前
 
-~~[自用插件开发模板](https://github.com/nyaruhodoo/LiteLoader-NapCatCore-Template)~~  
-重构中...
+[自用插件开发模板](https://github.com/nyaruhodoo/LiteLoader-NapCatCore-Template)  
 
 本文章不出意外的话应该是不会再进行什么更新了，想要实现的功能都会集成在模板里
 
