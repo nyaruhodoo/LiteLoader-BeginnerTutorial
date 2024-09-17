@@ -19,7 +19,12 @@ require('./launcher.node').load('external_index', module)
 ```
 
 我想大家都知道 LiteLoader 如何安装，这里先无视掉完整性检查之类的东东  
-显然易见的能看出来在 QQ 启动之前就执行了"我们"的代码，在 HOOK 这一领域，显然谁先执行谁有理
+显然易见的能看出来在 QQ 启动之前就执行了"我们"的代码，在 HOOK 这一领域，谁先执行谁有理  
+在 JS 中我们不仅可以对全局 API 进行覆盖，import 的模块也可以通过 cache 进行覆盖  
+通过这一操作就可以绝对掌握 QQ 的运行环境
+
+讲一个小趣事，之前某个屏蔽百度的广告的JS插件用到了 `IntersectionObserver` 百度发现后直接把这个 API 赋值为 `null`  
+因为油猴脚本的插入时机做不到比原逻辑更快
 
 ## 拦截 main
 
