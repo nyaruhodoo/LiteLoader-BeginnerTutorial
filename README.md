@@ -129,7 +129,8 @@ const runPreloadScript = (code) =>
 这里提供一个思路来快速创建具备响应式的 UI 界面，如果对 UI 要求比较高可能不合适你  
 下面用到的部分组件是 [LiteLoaderQQNT](https://liteloaderqqnt.github.io/docs/web-components.html) 提供的
 
-[相关代码已进行迁移](https://github.com/nyaruhodoo/LiteLoader-NapCatCore-Template/blob/master/src/renderer/configPage/index.ts)
+[相关代码已进行迁移](https://github.com/nyaruhodoo/LiteLoader-Wrapper-Template/blob/master/src/renderer/configView/App.vue)
+
 
 ## 初始化与卸载逻辑
 
