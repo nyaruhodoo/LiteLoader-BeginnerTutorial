@@ -125,12 +125,9 @@ const runPreloadScript = (code) =>
 
 # 添加设置界面
 
-我很纠结要不要把添加设置界面放在最开头，对我来说应该是先有设置界面再有核心功能，毕竟涉及到配置文件更新如果后期进行改动还是挺麻烦的  
-这里提供一个思路来快速创建具备响应式的 UI 界面，如果对 UI 要求比较高可能不合适你  
-下面用到的部分组件是 [LiteLoaderQQNT](https://liteloaderqqnt.github.io/docs/web-components.html) 提供的
-
-[相关代码已进行迁移](https://github.com/nyaruhodoo/LiteLoader-Wrapper-Template/blob/master/src/renderer/configView/App.vue)
-
+[相关代码已进行迁移](https://github.com/nyaruhodoo/LiteLoader-Wrapper-Template/blob/master/src/renderer/configView/App.vue)  
+因为集成了 Vue 现在添加设计界面已经是很随意的事情了，完全看你想怎么做，哪怕直接安装一个[element](https://element-plus.org/zh-CN/)都没什么问题  
+模板中只针对LL提供的部分组件额外封装了一层便于绑定 `v-model`
 
 ## 初始化与卸载逻辑
 
@@ -226,7 +223,11 @@ export const initGrabRedBag = async (config?: ConfigType) => {
 
 # 在渲染层做点什么
 
-有空再写吧，因为我目前开发的插件完全不需要在渲染层做什么事情  
-实际上到了这个步骤你直接拿到 window 对象，就把他当作一个浏览器去处理各种 DOM 即可
+渲染层实际上并没有太多需要注意的事情，硬要说的话倒是有几个点
+- LL会对所有窗口注入渲染层代码，需要你自行判断url决定代码是否执行
+- 可以通过`window.app`拿到一些提前注入好的数据(几个vue相关的属性，自己翻吧)
+- 可以通过`window.ipcRenderer`直接监听ipc相关事件
 
-鸽啦~
+## Hook Vue
+
+未完待续，鸽一会
